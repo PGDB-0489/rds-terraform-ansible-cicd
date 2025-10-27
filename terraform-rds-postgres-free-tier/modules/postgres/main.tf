@@ -13,6 +13,7 @@ data "aws_subnets" "default_vpc" {
 resource "random_password" "db_password" {
   length  = 16
   special = true
+  override_special = "_%#-!"
 }
 
 resource "aws_db_subnet_group" "this" {
@@ -77,7 +78,7 @@ resource "aws_db_instance" "postgres" {
 }
 
 resource "aws_secretsmanager_secret" "mypgsecret" {
-  name = "${var.project}-${var.environment}-db-credentials"
+  name = "${var.project}-${var.environment}-db-credentials1"
   description = "RDS Postgres credentials for ${var.project}-${var.environment}"
   
   lifecycle {
@@ -115,7 +116,7 @@ resource "aws_db_parameter_group" "custom" {
     content {
       name  = parameter.key
       value = parameter.value
-      ##apply_method = lookup(parameter.value, "apply_method", "immediate")
+      apply_method = contains(["shared_buffers", "max_connections"], parameter.key) ? "pending-reboot" : "immediate"
     }
   }
   tags = {
