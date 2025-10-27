@@ -1,0 +1,6 @@
+{
+  "log_statement": "all",
+  "work_mem": "4096",
+  "max_connections": "150",
+  "shared_buffers": "256MB"
+}
