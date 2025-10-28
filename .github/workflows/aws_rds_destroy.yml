@@ -32,7 +32,9 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          # Using the same role ARN as the deploy workflow. Replace with a repository secret
+          # (recommended) named AWS_ROLE_ARN if you prefer to keep the ARN out of source.
+          role-to-assume: arn:aws:iam::677276085413:role/github-terraform-role
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
