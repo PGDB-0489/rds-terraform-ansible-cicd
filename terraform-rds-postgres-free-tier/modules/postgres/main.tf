@@ -78,7 +78,7 @@ resource "aws_db_instance" "postgres" {
 }
 
 resource "aws_secretsmanager_secret" "mypgsecret" {
-  name = "${var.project}-${var.environment}-db-credentials1"
+  name = "${var.project}-${var.environment}-db-credentials2"
   description = "RDS Postgres credentials for ${var.project}-${var.environment}"
   
   lifecycle {
