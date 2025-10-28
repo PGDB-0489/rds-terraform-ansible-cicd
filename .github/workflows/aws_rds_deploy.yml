@@ -1,36 +1,75 @@
-# This is a basic workflow to help you get started with Actions
+name: Terraform CI/CD
 
-name: CI
-
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
   push:
     branches: [ "main" ]
+    paths:
+      - 'terraform-rds-postgres-free-tier/**'
+      - '.github/workflows/aws_rds_deploy.yml'
   pull_request:
     branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    paths:
+      - 'terraform-rds-postgres-free-tier/**'
+      - '.github/workflows/aws_rds_deploy.yml'
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+permissions:
+  contents: read
+  id-token: write  # required for OIDC authentication with AWS
+
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
+  terraform:
+    name: Terraform Deploy
     runs-on: ubuntu-latest
+    env:
+      TF_WORKING_DIR: ./terraform-rds-postgres-free-tier
+      AWS_REGION: us-east-1
+      ENVIRONMENT: dev
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::677276085413:role/github-terraform-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          terraform init \
+            -backend-config="bucket=argha-cicd-tf-state-bucket" \
+            -backend-config="key=${{ env.ENVIRONMENT }}/terraform-rds-postgres-free-tier/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=terraform-state-locks" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Format
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform fmt -check
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform plan -var="environment=${{ env.ENVIRONMENT }}" -out=tfplan
+        continue-on-error: true
+
+      - name: Check Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform Apply (auto-approve on main)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve tfplan
