@@ -16,13 +16,13 @@ output "rds_username" {
 output "namespace" {
   value       = module.postgres.project
   description = "Project/Environment namespace"
-  
+
 }
 
 output "db_secret_version" {
   value       = module.postgres.db_secret_version
   description = "RDS secret version"
-  
+
 }
 
 output "rds_dbname" {

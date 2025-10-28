@@ -11,7 +11,7 @@ module "postgres" {
   allowed_cidrs       = var.allowed_cidrs
   publicly_accessible = var.publicly_accessible
   parameters          = local.db_params
-  db_secret_version = var.db_secret_version
+  db_secret_version   = var.db_secret_version
 }
 
 locals {

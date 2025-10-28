@@ -57,19 +57,19 @@ variable "db_password" {
   type        = string
   sensitive   = true
   default     = ""
-  
+
 }
 
 variable "parameter-file" {
   description = "Path to a custom DB parameter file (JSON format)"
   type        = string
   default     = "db-params.json"
-  
+
 }
 
 variable "db_secret_version" {
   description = "ARN of the AWS Secrets Manager secret to retrieve the DB password from"
   type        = string
   default     = ""
-  
+
 }
