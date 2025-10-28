@@ -1,0 +1,73 @@
+name: Destroy AWS RDS PostgreSQL
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type YES to confirm destroy (required)"
+        required: true
+        default: "no"
+      environment:
+        description: "Environment prefix used in backend key (default: dev)"
+        required: false
+        default: "dev"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKING_DIR: ./terraform-rds-postgres-free-tier
+      AWS_REGION: us-east-1
+      ENVIRONMENT: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Confirm destructive action
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "YES" ]; then
+            echo "Destroy aborted: confirmation input was not 'YES'. To proceed, run this workflow and set 'confirm' to 'YES'."
+            exit 1
+          fi
+
+      - name: Terraform Init (S3 backend + DynamoDB lock)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=argha-cicd-tf-state-bucket" \
+            -backend-config="key=${{ env.ENVIRONMENT }}/terraform-rds-postgres-free-tier/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=terraform-state-locks" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Plan (destroy)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -destroy -no-color -out=destroyplan
+
+      - name: Show destroy plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform show -no-color destroyplan || true
+
+      - name: Apply destroy plan (auto-approve)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform apply -auto-approve destroyplan
