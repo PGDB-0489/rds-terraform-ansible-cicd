@@ -25,6 +25,7 @@ jobs:
       TF_WORKING_DIR: ./terraform-rds-postgres-free-tier
       AWS_REGION: us-east-1
       ENVIRONMENT: dev
+      PROJECT: rds-free-tier
 
     steps:
       - name: Checkout code
@@ -73,3 +74,47 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve tfplan
+
+      - name: Get DB credentials from Secrets Manager
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          SECRET_NAME="${PROJECT}-${ENVIRONMENT}-db-credentials2"
+          echo "Fetching secret: ${SECRET_NAME}"
+          aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text > secret.json
+          cat secret.json
+
+      - name: Install Ansible and PostgreSQL collection
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible psycopg2-binary
+          ansible-galaxy collection install community.postgresql
+
+      - name: Build Ansible inventory and variables
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          DB_HOST=$(jq -r '.host' secret.json)
+          DB_PORT=$(jq -r '.port' secret.json)
+          DB_USER=$(jq -r '.username' secret.json)
+          DB_PASS=$(jq -r '.password' secret.json)
+          DB_NAME=$(jq -r '.dbname' secret.json)
+
+          cat > inventory.ini <<EOF
+          [db]
+          localhost ansible_connection=local
+
+          [db:vars]
+          db_host=${DB_HOST}
+          db_port=${DB_PORT}
+          db_user=${DB_USER}
+          db_pass=${DB_PASS}
+          db_name=${DB_NAME}
+          EOF
+
+          echo "Inventory created:" && cat inventory.ini
+
+      - name: Run Ansible playbook to create DB objects
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          ansible-playbook ansible/create_db_objects.yml -i inventory.ini

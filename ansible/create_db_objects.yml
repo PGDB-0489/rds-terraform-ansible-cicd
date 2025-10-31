@@ -1,0 +1,26 @@
+---
+- name: Create database objects on RDS Postgres
+  hosts: db
+  gather_facts: false
+  collections:
+    - community.postgresql
+
+  tasks:
+    - name: Ensure schema and example table exist
+      community.postgresql.postgresql_query:
+        db: "{{ db_name }}"
+        login_host: "{{ db_host }}"
+        login_user: "{{ db_user }}"
+        login_password: "{{ db_pass }}"
+        login_port: "{{ db_port }}"
+        query: |
+          CREATE SCHEMA IF NOT EXISTS app;
+          CREATE TABLE IF NOT EXISTS app.example (
+            id serial PRIMARY KEY,
+            name text
+          );
+      register: create_result
+
+    - name: Show result
+      debug:
+        var: create_result
