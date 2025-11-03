@@ -77,7 +77,7 @@ resource "aws_db_instance" "postgres" {
   }
 }
 
-resource "aws_secretsmanager_secret" "mypgsecret" {
+resource "aws_secretsmanager_secret" "mypgsecret1" {
   name = "${var.project}-${var.environment}-db-credentials2"
   description = "RDS Postgres credentials for ${var.project}-${var.environment}"
   
@@ -93,7 +93,7 @@ resource "aws_secretsmanager_secret" "mypgsecret" {
 }
 
 resource "aws_secretsmanager_secret_version" "db_secret_version" {
-  secret_id     = aws_secretsmanager_secret.mypgsecret.id
+  secret_id     = aws_secretsmanager_secret.mypgsecret1.id
   secret_string = jsonencode({
     username = var.db_username
     password = random_password.db_password.result
