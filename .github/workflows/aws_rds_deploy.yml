@@ -60,14 +60,47 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform validate
 
-      - name: Terraform Plan
+      # Plan on pull requests
+      - name: Terraform Plan (Pull Request)
         id: plan
+        if: github.event_name == 'pull_request'
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -var="environment=${{ env.ENVIRONMENT }}" -out=tfplan
+        run: |
+          terraform plan -var="environment=${{ env.ENVIRONMENT }}" -no-color -out=tfplan
         continue-on-error: true
 
+      # Post plan comment on PR
+      - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PLAN: "${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Plan 📖
+            \`\`\`terraform
+            ${process.env.PLAN}
+            \`\`\`
+            `;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      # Plan before apply on push
+      - name: Terraform Plan (Push)
+        id: plan-push
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -var="environment=${{ env.ENVIRONMENT }}" -out=tfplan
+
       - name: Check Terraform Plan Status
-        if: steps.plan.outcome == 'failure'
+        if: (github.event_name == 'pull_request' && steps.plan.outcome == 'failure') || 
+            ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.plan-push.outcome == 'failure')
         run: exit 1
 
       - name: Terraform Apply (auto-approve on main)
@@ -79,26 +112,38 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          SECRET_NAME="${PROJECT}-${ENVIRONMENT}-db-credentials3"
+          SECRET_NAME="${PROJECT}-${ENVIRONMENT}-db-credentials2"
           echo "Fetching secret: ${SECRET_NAME}"
-          aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text > secret.json
-          cat secret.json
+          # write secret to the runner workspace so subsequent steps (which may run from repo root)
+          # can access it reliably
+          aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text > $GITHUB_WORKSPACE/secret.json
+          echo "Saved secret to $GITHUB_WORKSPACE/secret.json"
+          ls -la $GITHUB_WORKSPACE | sed -n '1,200p'
 
       - name: Install Ansible and PostgreSQL collection
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |
           python -m pip install --upgrade pip
           pip install ansible psycopg2-binary
+          # ensure jq is present for JSON parsing
+          sudo apt-get update && sudo apt-get install -y jq
           ansible-galaxy collection install community.postgresql
 
       - name: Build Ansible inventory and variables
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |
-          DB_HOST=$(jq -r '.host' secret.json)
-          DB_PORT=$(jq -r '.port' secret.json)
-          DB_USER=$(jq -r '.username' secret.json)
-          DB_PASS=$(jq -r '.password' secret.json)
-          DB_NAME=$(jq -r '.dbname' secret.json)
+          SECRET_FILE="$GITHUB_WORKSPACE/secret.json"
+          if [ ! -f "$SECRET_FILE" ]; then
+            echo "ERROR: secret file not found: $SECRET_FILE"
+            echo "Workspace listing:" && ls -la $GITHUB_WORKSPACE
+            exit 1
+          fi
+
+          DB_HOST=$(jq -r '.host' "$SECRET_FILE")
+          DB_PORT=$(jq -r '.port' "$SECRET_FILE")
+          DB_USER=$(jq -r '.username' "$SECRET_FILE")
+          DB_PASS=$(jq -r '.password' "$SECRET_FILE")
+          DB_NAME=$(jq -r '.dbname' "$SECRET_FILE")
 
           cat > inventory.ini <<EOF
           [db]
