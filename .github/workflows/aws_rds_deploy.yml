@@ -79,7 +79,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          SECRET_NAME="${PROJECT}-${ENVIRONMENT}-db-credentials2"
+          SECRET_NAME="${PROJECT}-${ENVIRONMENT}-db-credentials3"
           echo "Fetching secret: ${SECRET_NAME}"
           aws secretsmanager get-secret-value --secret-id "${SECRET_NAME}" --query SecretString --output text > secret.json
           cat secret.json
